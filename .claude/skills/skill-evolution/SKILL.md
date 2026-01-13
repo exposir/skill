@@ -970,6 +970,549 @@ Level 3：专家版（深度打磨）
 
 ---
 
+<!-- Evolved: 2026-01-13 | type: 无极进化 | sources: getmaxim.ai, medium.com -->
+## 5P 结构化框架
+
+标准化的 Skill 结构，确保内容完整且易于 AI 理解。
+
+### 5P 要素
+
+| 要素 | 英文 | 作用 | 示例 |
+|-----|------|------|------|
+| **角色** | Role | 定义 AI 扮演的角色 | "你是一个资深前端工程师" |
+| **目标** | Goal | 明确要达成的结果 | "审查代码并发现潜在问题" |
+| **上下文** | Context | 提供必要的背景信息 | "这是一个 React 项目，使用 TypeScript" |
+| **格式** | Format | 指定输出格式 | "以 Markdown 表格输出，按严重程度排序" |
+| **约束** | Constraints | 边界条件和限制 | "只关注安全和性能问题，忽略代码风格" |
+
+### 应用到 Skill 模板
+
+```markdown
+---
+name: <skill-name>
+description: <触发描述>
+---
+
+# <Skill 标题>
+
+## Role（角色定位）
+你是一个 [专业角色]，擅长 [核心能力]。
+
+## Goal（目标）
+帮助用户 [达成什么结果]。
+
+## Context（上下文）
+### 适用场景
+- 场景 1
+- 场景 2
+
+### 前置条件
+- 条件 1
+- 条件 2
+
+## Format（输出格式）
+[使用什么格式输出，如表格、列表、代码块等]
+
+## Constraints（约束）
+- 必须做的事
+- 禁止做的事
+- 边界条件
+
+## Execution（执行流程）
+1. 步骤 1
+2. 步骤 2
+3. ...
+```
+
+### 5P 检查清单
+
+创建或更新 Skill 时，逐项检查：
+
+- [ ] **Role**：角色是否明确？专业领域是否清晰？
+- [ ] **Goal**：目标是否具体可衡量？
+- [ ] **Context**：背景信息是否充足？适用场景是否清楚？
+- [ ] **Format**：输出格式是否明确？是否有示例？
+- [ ] **Constraints**：边界条件是否完整？是否有负面约束（不应做什么）？
+
+---
+
+<!-- Evolved: 2026-01-13 | type: 无极进化 | sources: generativeai.pub, github.com -->
+## 跨平台兼容
+
+让 Skill 在 Claude Code、Cursor、VS Code 等工具间复用。
+
+### Agent Skills 开放标准
+
+2025 年 Anthropic 发布 Agent Skills 开放标准，主要参与者：
+
+| 平台 | 机制名称 | 存储位置 |
+|-----|---------|---------|
+| Claude Code | Skills | `.claude/skills/` |
+| Cursor | Rules + Commands | `.cursor/rules/` 或 `.cursorrules` |
+| VS Code (Copilot) | Instructions | `.github/copilot-instructions.md` |
+| Windsurf | Rules | `.windsurfrules` |
+
+### 跨平台复用策略
+
+```
+推荐存储结构（Claude Code 优先）：
+
+.claude/
+├── skills/
+│   ├── code-review/
+│   │   └── SKILL.md
+│   └── ...
+└── commands/          ← Cursor 可识别此目录
+
+.cursor/
+└── rules/
+    └── code-review.mdc   ← 可从 skills 同步
+```
+
+**关键发现**：Cursor 可以识别 `.claude/commands/` 目录，但 Claude Code 不识别 `.cursor/` 目录。因此建议以 Claude Code 结构为主。
+
+### 格式转换
+
+从 Claude Skill 转换为 Cursor Rule：
+
+```markdown
+# Claude Skill 格式
+---
+name: code-review
+description: 审查代码
+---
+# 内容...
+
+# 转换为 Cursor Rule (.mdc 格式)
+---
+description: 审查代码
+globs: ["**/*.ts", "**/*.tsx"]
+alwaysApply: false
+---
+# 内容...
+```
+
+### 同步脚本示例
+
+```bash
+#!/bin/bash
+# sync-skills.sh - 将 Claude Skills 同步到 Cursor Rules
+
+SKILLS_DIR=".claude/skills"
+CURSOR_DIR=".cursor/rules"
+
+mkdir -p "$CURSOR_DIR"
+
+for skill_dir in "$SKILLS_DIR"/*/; do
+    skill_name=$(basename "$skill_dir")
+    skill_file="$skill_dir/SKILL.md"
+
+    if [ -f "$skill_file" ]; then
+        # 提取 description
+        desc=$(grep "^description:" "$skill_file" | sed 's/description: //')
+
+        # 创建 Cursor rule
+        {
+            echo "---"
+            echo "description: $desc"
+            echo "alwaysApply: false"
+            echo "---"
+            # 跳过 YAML frontmatter，复制内容
+            sed '1,/^---$/d' "$skill_file" | sed '1,/^---$/d'
+        } > "$CURSOR_DIR/$skill_name.mdc"
+
+        echo "✅ Synced: $skill_name"
+    fi
+done
+```
+
+### 平台差异注意
+
+| 差异点 | Claude Code | Cursor |
+|-------|-------------|--------|
+| 触发机制 | 语义匹配 description | glob 匹配 + alwaysApply |
+| 工具调用 | 丰富的内置工具 | 有限的工具支持 |
+| 上下文 | 完整对话历史 | 当前文件为主 |
+| 手动触发 | `/skill-name` | `@rules` 引用 |
+
+---
+
+<!-- Evolved: 2026-01-13 | type: 无极进化 | sources: n8n.io, getmaxim.ai -->
+## 安全与合规
+
+Skill 的安全管理、审计和权限控制。
+
+### 安全检查清单
+
+创建或审核 Skill 时检查：
+
+| 检查项 | 风险等级 | 说明 |
+|-------|---------|------|
+| 敏感信息 | 🔴 高 | Skill 中不应包含密钥、token、密码 |
+| 命令注入 | 🔴 高 | Bash 命令是否有用户输入拼接风险 |
+| 路径遍历 | 🟡 中 | 文件路径是否可能被操控 |
+| 权限范围 | 🟡 中 | Skill 是否请求了过多权限 |
+| 外部依赖 | 🟢 低 | 是否依赖外部 URL/API |
+
+### 敏感信息保护
+
+```markdown
+# ❌ 错误示例
+API_KEY=sk-xxx-your-key-here
+curl -H "Authorization: Bearer $API_KEY" ...
+
+# ✅ 正确示例
+使用环境变量：$API_KEY 或 ${OPENAI_API_KEY}
+```
+
+**自动检测规则**：
+
+```bash
+# 检测 Skill 中的敏感信息
+grep -rE "(api_key|apikey|secret|password|token|bearer)\s*[:=]" .claude/skills/
+```
+
+### 审计日志
+
+记录 Skill 的重要变更：
+
+```markdown
+<!-- 在 config.md 中维护 -->
+## 审计日志
+
+| 时间 | 操作 | Skill | 操作者 | 说明 |
+|-----|------|-------|-------|------|
+| 2026-01-13 | 创建 | code-review | user | 初始版本 |
+| 2026-01-13 | 进化 | code-review | system | 无极进化 |
+| 2026-01-13 | 修正 | frontend-daily | user | 修复 RSS 源 |
+```
+
+### 权限控制模型
+
+```
+Skill 权限分级：
+
+Level 0 - 只读
+├─ 只能读取文件
+└─ 不能执行命令
+
+Level 1 - 受限执行
+├─ 可执行白名单命令
+├─ 不能访问网络
+└─ 不能修改系统文件
+
+Level 2 - 标准执行
+├─ 可执行大多数命令
+├─ 可访问网络
+└─ 受沙箱保护
+
+Level 3 - 完全信任
+├─ 可执行任意命令
+└─ 仅用于用户自己编写的 Skill
+```
+
+### Human-in-the-Loop (HITL)
+
+对高风险操作保持人工审核：
+
+```markdown
+## HITL 配置
+
+### 需要人工确认的操作
+- 删除文件或目录
+- 执行破坏性 git 命令（force push, hard reset）
+- 修改配置文件
+- 访问生产环境
+
+### 升级规则
+- 连续 3 次相似操作失败 → 请求人工介入
+- 操作耗时超过 5 分钟 → 发送进度通知
+- 检测到异常模式 → 暂停并报告
+
+### 超时处理
+- 等待人工确认最长 10 分钟
+- 超时后自动取消操作
+- 记录超时事件
+```
+
+---
+
+<!-- Evolved: 2026-01-13 | type: 无极进化 | sources: medium.com, github.com/cline -->
+## Memory Bank 模式
+
+实现跨会话的知识持久化和上下文保留。
+
+### 与 Agentic Memory 的关系
+
+```
+Agentic Memory（之前章节）
+└─ 概念：将知识存储在 context 外，按需加载
+
+Memory Bank（本章节）
+└─ 实现：具体的持久化存储方案和工作流
+```
+
+### Memory Bank 架构
+
+```
+.claude/
+├── memory/                    ← Memory Bank 根目录
+│   ├── project-context.md     ← 项目级上下文
+│   ├── session-history/       ← 会话历史摘要
+│   │   ├── 2026-01-13.md
+│   │   └── ...
+│   ├── decisions/             ← 架构决策记录
+│   │   ├── adr-001-auth.md
+│   │   └── ...
+│   └── learned/               ← 学习到的知识
+│       ├── bugs-fixed.md
+│       └── patterns.md
+└── skills/                    ← Skill 目录（已有）
+```
+
+### 项目上下文模板
+
+```markdown
+# Project Context
+
+## 项目概述
+- 名称：
+- 类型：[Web App / CLI / Library / ...]
+- 技术栈：
+
+## 架构决策
+- 状态管理：
+- 路由方案：
+- API 风格：
+
+## 代码规范
+- 命名约定：
+- 文件组织：
+- 测试要求：
+
+## 常见问题
+- 问题 1：解决方案
+- 问题 2：解决方案
+
+## 最近工作
+<!-- 由系统自动更新 -->
+- [日期] 完成了 xxx
+- [日期] 修复了 xxx
+```
+
+### 会话摘要机制
+
+每次会话结束时自动生成摘要：
+
+```markdown
+# 会话摘要 - 2026-01-13
+
+## 完成的任务
+- 实现了用户认证功能
+- 修复了 3 个 TypeScript 类型错误
+
+## 学到的知识
+- React 19 的 use() hook 用法
+- Zod schema 与 TypeScript 类型推断
+
+## 遗留问题
+- [ ] 需要添加单元测试
+- [ ] 性能优化待处理
+
+## 关键文件变更
+- src/auth/login.tsx (新增)
+- src/types/user.ts (修改)
+```
+
+### 上下文加载策略
+
+```
+会话开始时：
+1. 读取 project-context.md（总是加载）
+2. 读取最近 3 个会话摘要（按需）
+3. 根据用户请求加载相关 decisions/learned
+
+会话进行中：
+4. 检测到相关话题 → 加载对应记忆
+5. 学到新知识 → 提示保存到 learned/
+
+会话结束时：
+6. 生成会话摘要
+7. 更新 project-context.md（如有重要变更）
+```
+
+### 与 Skill 进化的集成
+
+```markdown
+## Memory → Skill 进化路径
+
+1. 知识首先记录到 Memory Bank
+   └─ .claude/memory/learned/patterns.md
+
+2. 当某个模式被多次使用（≥3次）
+   └─ 提示：「这个模式出现多次，要创建 Skill 吗？」
+
+3. 用户确认后，从 Memory 提炼为 Skill
+   └─ .claude/skills/<new-skill>/SKILL.md
+
+4. 原 Memory 记录标记为「已提炼」
+   └─ <!-- Promoted to skill: <skill-name> -->
+```
+
+---
+
+<!-- Evolved: 2026-01-13 | type: 无极进化 | sources: brainyboss.ai, hyscaler.com -->
+## 4P Ladder 进阶路径
+
+从简单 Prompt 到自主 Agent 的演进模型。
+
+### 4P 阶梯概览
+
+```
+Level 4: Proactive Agents（主动代理）
+         ↑ 自主执行、人工监督
+Level 3: Plug-ins（插件）
+         ↑ 连接工具和数据
+Level 2: Playbooks（剧本）
+         ↑ 可复用工作流
+Level 1: Prompts（提示词）
+         ↑ 基础交互
+```
+
+### 各层级详解
+
+#### Level 1: Prompts（提示词）
+
+```markdown
+特征：
+- 单次交互
+- 手动触发
+- 无状态
+
+示例：
+"帮我写一个 React 组件"
+
+对应 Skill 类型：
+- 简单的代码生成模板
+- 单一任务指令
+```
+
+#### Level 2: Playbooks（剧本）
+
+```markdown
+特征：
+- 多步骤流程
+- 可复用
+- 有明确的输入输出
+
+示例：
+"代码审查流程"
+1. 读取 PR 描述
+2. 分析代码变更
+3. 检查各维度
+4. 生成报告
+
+对应 Skill 类型：
+- 带流程的完整 Skill
+- 包含检查清单和输出模板
+```
+
+#### Level 3: Plug-ins（插件）
+
+```markdown
+特征：
+- 连接外部工具
+- 数据集成
+- 有安全边界
+
+示例：
+"集成 GitHub API 的 PR 审查"
+- 自动获取 PR 信息
+- 调用 lint/test 工具
+- 发布评论到 PR
+
+对应 Skill 类型：
+- 包含工具调用的 Skill
+- 需要权限配置
+- 有错误处理逻辑
+```
+
+#### Level 4: Proactive Agents（主动代理）
+
+```markdown
+特征：
+- 自主决策
+- 持续运行
+- 人工监督
+
+示例：
+"自动代码审查机器人"
+- 监听 PR 创建事件
+- 自动执行审查
+- 根据严重程度决定是否阻塞
+- 异常时通知人工
+
+对应 Skill 类型：
+- Agent 配置 + 多个 Skill 组合
+- 需要 HITL 机制
+- 需要监控和日志
+```
+
+### Skill 成熟度评估
+
+评估你的 Skill 处于哪个层级：
+
+| 层级 | 检查项 | 达标标准 |
+|-----|-------|---------|
+| L1 | 基础功能 | 能完成单一任务 |
+| L2 | 流程完整 | 有明确步骤、可复用、有模板 |
+| L3 | 工具集成 | 调用外部工具、处理错误、有权限控制 |
+| L4 | 自主运行 | 事件驱动、自主决策、人工监督 |
+
+### 升级路径建议
+
+```
+L1 → L2：添加流程
+├─ 将单次操作扩展为多步骤
+├─ 添加输入验证和输出模板
+└─ 编写使用示例
+
+L2 → L3：添加集成
+├─ 识别可自动化的手动步骤
+├─ 集成相关工具（git, npm, API）
+├─ 添加错误处理和重试逻辑
+└─ 配置权限边界
+
+L3 → L4：添加自主性
+├─ 定义触发事件（webhook, 定时）
+├─ 设计决策逻辑
+├─ 实现 HITL 机制
+└─ 建立监控和告警
+```
+
+### 实际案例：code-review 的进化
+
+```
+L1 阶段：
+"检查这段代码有没有问题"
+
+L2 阶段：
+完整的审查流程 + 检查清单 + 报告模板
+
+L3 阶段（当前）：
++ 集成 ESLint/TypeScript 检查
++ 调用 git diff 获取变更
++ 格式化输出审查结果
+
+L4 阶段（目标）：
++ GitHub webhook 触发
++ 自动评论到 PR
++ 根据问题严重程度阻塞合并
++ 异常情况通知维护者
+```
+
+---
+
 ## 背景知识：Skill 的本质与原理
 
 ### Skill 是什么
