@@ -256,6 +256,287 @@ describe('calculateTotal', () => {
 
 ---
 
+<!-- Evolved: 2026-01-13 | type: 无极进化 | sources: devcom.com, mindbowser.com, IBM, pagepro.co -->
+## React/Vue 组件审查
+
+### Hooks 使用规范 (React)
+
+| 检查项 | 问题信号 | 建议 |
+|-------|---------|------|
+| 调用顺序 | hooks 在条件/循环中调用 | hooks 只能在组件顶层调用 |
+| 依赖数组 | `useEffect` 缺少依赖或依赖过多 | 精确声明依赖，使用 ESLint 插件检查 |
+| Cleanup 缺失 | 订阅/定时器未清理 | `useEffect` 返回 cleanup 函数 |
+| 过度使用 | 简单逻辑也用 hooks 封装 | 简单状态直接用 `useState` |
+
+```typescript
+// 问题示例
+function UserProfile({ userId }) {
+  const [user, setUser] = useState(null);
+
+  // ❌ 缺少依赖、缺少 cleanup、缺少错误处理
+  useEffect(() => {
+    fetch(`/api/users/${userId}`).then(r => r.json()).then(setUser);
+  }, []); // userId 未在依赖中
+
+  return <div>{user?.name}</div>;
+}
+
+// 改进示例
+function UserProfile({ userId }) {
+  const [user, setUser] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch(`/api/users/${userId}`)
+      .then(r => r.json())
+      .then(data => { if (!cancelled) setUser(data); })
+      .catch(err => { if (!cancelled) setError(err); });
+
+    return () => { cancelled = true; }; // ✅ Cleanup
+  }, [userId]); // ✅ 正确的依赖
+
+  if (error) return <div>Error loading user</div>;
+  return <div>{user?.name}</div>;
+}
+```
+
+### 组件设计原则
+
+- [ ] **单一职责**：一个组件只做一件事
+- [ ] **业务逻辑分离**：UI 渲染与业务逻辑分开（自定义 hooks）
+- [ ] **Props 最小化**：只传必要的 props，避免 prop drilling
+- [ ] **组件大小**：超过 200 行考虑拆分
+
+### 性能优化检查
+
+| 检查项 | 何时使用 | 何时避免 |
+|-------|---------|---------|
+| `React.memo` | 组件频繁重渲染但 props 不变 | 简单组件、props 经常变化 |
+| `useMemo` | 计算开销大的值 | 简单计算 |
+| `useCallback` | 回调作为依赖传递给子组件 | 不传递给子组件的回调 |
+
+```typescript
+// ⚠️ 过度优化示例
+const SimpleButton = React.memo(({ onClick }) => (
+  <button onClick={onClick}>Click</button>
+)); // 对于简单组件，memo 开销可能大于收益
+
+// ✅ 合理优化示例
+const ExpensiveList = React.memo(({ items, onItemClick }) => (
+  <ul>
+    {items.map(item => (
+      <li key={item.id} onClick={() => onItemClick(item.id)}>
+        {expensiveRender(item)}
+      </li>
+    ))}
+  </ul>
+));
+```
+
+### Vue 特定检查
+
+- [ ] **响应式正确性**：避免直接修改 props，使用 `emit` 通知父组件
+- [ ] **Composition API**：逻辑是否合理组织在 `setup()` 或 `<script setup>` 中
+- [ ] **v-for 与 v-if**：避免在同一元素上同时使用（v-if 优先级更高）
+- [ ] **Key 绑定**：`v-for` 是否使用稳定唯一的 key
+
+---
+
+<!-- Evolved: 2026-01-13 | type: 无极进化 | sources: IBM, pagepro.co, WCAG -->
+## 可访问性 (a11y) 审查
+
+### 基础检查清单
+
+- [ ] **语义化 HTML**：使用正确的标签（`<button>` 而非 `<div onClick>`）
+- [ ] **Alt 文本**：所有 `<img>` 都有有意义的 `alt` 属性
+- [ ] **表单标签**：所有表单元素都有关联的 `<label>`
+- [ ] **焦点可见**：可交互元素有清晰的焦点样式
+- [ ] **键盘导航**：所有功能可通过键盘操作
+
+### ARIA 使用原则
+
+| 原则 | 说明 |
+|-----|------|
+| 优先使用原生 HTML | `<button>` 优于 `<div role="button">` |
+| 不要改变语义 | 避免 `<h1 role="button">` |
+| 可交互元素可聚焦 | 自定义控件需要 `tabindex="0"` |
+| 隐藏装饰性元素 | 装饰图标用 `aria-hidden="true"` |
+
+```typescript
+// ❌ 问题示例
+<div className="btn" onClick={handleClick}>
+  <img src="icon.svg" />
+  Submit
+</div>
+
+// ✅ 改进示例
+<button type="submit" onClick={handleClick}>
+  <img src="icon.svg" alt="" aria-hidden="true" />
+  Submit
+</button>
+```
+
+### 常见问题速查
+
+| 问题 | 检测方法 |
+|-----|---------|
+| 缺少 alt | 搜索 `<img` 检查是否都有 alt |
+| 非语义按钮 | 搜索 `div.*onClick`, `span.*onClick` |
+| 颜色对比不足 | 使用 Lighthouse 或 axe 工具检测 |
+| 缺少跳过链接 | 页面顶部是否有 "Skip to content" |
+
+---
+
+<!-- Evolved: 2026-01-13 | type: 无极进化 | sources: devtoolsacademy.com, qodo.ai, codeant.ai -->
+## AI 辅助审查工具
+
+### 工具推荐
+
+| 工具 | 特点 | 集成方式 |
+|-----|------|---------|
+| **GitHub Copilot for PR** | 自动审查 PR，识别 bug 和性能问题 | GitHub 原生集成 |
+| **CodeRabbit** | 高度可配置，支持自定义规则 | GitHub/GitLab/Bitbucket |
+| **Sourcery** | 支持 30+ 语言，解释建议原因 | GitHub/GitLab + IDE |
+| **Qodo** | 专注测试覆盖和代码完整性 | CI/CD 集成 |
+
+### AI 审查的定位
+
+```
+AI 审查 ≠ 替代人工审查
+AI 审查 = 人工审查的预处理和辅助
+```
+
+**AI 擅长：**
+- 发现常见 bug 模式（空指针、数组越界）
+- 检查代码风格一致性
+- 识别性能反模式
+- 生成审查摘要
+
+**AI 不擅长（仍需人工）：**
+- 架构设计决策
+- 业务逻辑正确性
+- 代码可读性的主观判断
+- 上下文相关的最佳实践
+
+### Review Gap 现象
+
+AI 生成代码的速度远超人工审查能力，导致：
+- PR 积压
+- 审查质量下降
+- 技术债务累积
+
+**应对策略：**
+1. 使用 AI 工具预审查，过滤低级问题
+2. 保持 PR 小而聚焦（< 400 行）
+3. 优先审查高风险变更
+
+---
+
+<!-- Evolved: 2026-01-13 | type: 无极进化 | sources: crystallize.com, dev.to -->
+## 前端性能优化清单
+
+### Core Web Vitals 检查
+
+| 指标 | 目标值 | 检查重点 |
+|-----|-------|---------|
+| **LCP** (最大内容绘制) | < 2.5s | 首屏大图/视频是否优化 |
+| **INP** (交互延迟) | < 200ms | 事件处理是否阻塞主线程 |
+| **CLS** (累积布局偏移) | < 0.1 | 图片/广告是否预留空间 |
+
+### 资源优化检查
+
+**图片：**
+- [ ] 使用现代格式（WebP/AVIF）
+- [ ] 响应式图片（`srcset`）
+- [ ] 懒加载非首屏图片（`loading="lazy"`）
+- [ ] 指定宽高避免布局偏移
+
+**JavaScript：**
+- [ ] 代码分割（动态 `import()`）
+- [ ] Tree shaking 移除未使用代码
+- [ ] 延迟加载非关键脚本（`defer`/`async`）
+- [ ] 避免主线程长任务（> 50ms）
+
+**CSS：**
+- [ ] 移除未使用样式（PurgeCSS）
+- [ ] 关键 CSS 内联
+- [ ] 避免 `@import`（改用 `<link>`）
+
+### 性能审查工具
+
+```bash
+# 本地测量
+npx lighthouse https://example.com --view
+
+# CI 集成
+npm install -D @lhci/cli
+npx lhci autorun
+```
+
+| 工具 | 用途 |
+|-----|------|
+| Chrome DevTools Performance | 运行时性能分析 |
+| Lighthouse | 综合性能评分 |
+| WebPageTest | 真实网络环境测试 |
+| Bundle Analyzer | 包大小分析 |
+
+---
+
+<!-- Evolved: 2026-01-13 | type: 无极进化 | sources: medium.com, plainenglish.io -->
+## TypeScript 进阶检查（2025+）
+
+### 策略性类型推断
+
+| 场景 | 建议 | 示例 |
+|-----|------|------|
+| 简单变量 | 使用推断 | `const name = 'John'` |
+| 函数参数 | 显式声明 | `function greet(name: string)` |
+| 函数返回值 | 显式声明 | `function getUser(): User` |
+| API 响应 | 显式声明 | `const data: ApiResponse = await fetch()` |
+| 复杂对象 | 显式声明 | `const config: AppConfig = { ... }` |
+
+```typescript
+// ⚠️ 过度依赖推断
+async function fetchUser(id: string) {
+  const response = await api.get(`/users/${id}`);
+  return response.data; // 返回类型不明确
+}
+
+// ✅ 显式声明关键类型
+async function fetchUser(id: string): Promise<User | null> {
+  const response = await api.get<{ data: User }>(`/users/${id}`);
+  return response.data ?? null;
+}
+```
+
+### 高级类型使用检查
+
+- [ ] **Union 类型**：是否正确处理所有分支（exhaustive check）
+- [ ] **Type Guards**：运行时类型检查是否完善
+- [ ] **Generics 约束**：泛型是否有适当的 `extends` 约束
+- [ ] **Utility Types**：是否合理使用 `Partial`, `Required`, `Pick`, `Omit`
+
+```typescript
+// 穷尽检查示例
+type Status = 'pending' | 'success' | 'error';
+
+function handleStatus(status: Status): string {
+  switch (status) {
+    case 'pending': return 'Loading...';
+    case 'success': return 'Done!';
+    case 'error': return 'Failed';
+    default:
+      // 确保所有分支都被处理
+      const _exhaustive: never = status;
+      return _exhaustive;
+  }
+}
+```
+
+---
+
 **参考资源：**
 - [Microsoft Engineering Playbook](https://microsoft.github.io/code-with-engineering-playbook/code-reviews/)
 - [Google Engineering Practices](https://google.github.io/eng-practices/review/)
