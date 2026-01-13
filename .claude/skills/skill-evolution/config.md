@@ -34,7 +34,7 @@
 
 | Skill | 最后验证 | 状态 |
 |-------|---------|------|
-| code-review | 2026-01-13 | ✅ 通过 |
+| code-review | 2026-01-13 | ✅ 无极进化 |
 | frontend-daily | 2026-01-13 | ✅ 已修正+进化 |
 | skill-evolution | 2026-01-13 | ✅ 已合并 skill-generator |
 
