@@ -21,9 +21,8 @@
 | 分类 | 路径 | 说明 | 创建时间 |
 |-----|------|------|---------|
 | code-review | .claude/skills/code-review/ | 代码审查 | 2026-01-13 |
-| skill-generator | .claude/skills/skill-generator/ | Skill 生成器 | 2026-01-13 |
 | frontend-daily | .claude/skills/frontend-daily/ | 前端技术速览 | 2026-01-13 |
-| skill-evolution | .claude/skills/skill-evolution/ | 自我进化系统 | 2026-01-13 |
+| skill-evolution | .claude/skills/skill-evolution/ | 全生命周期管理 | 2026-01-13 |
 
 ## 忽略列表
 
@@ -36,9 +35,8 @@
 | Skill | 最后验证 | 状态 |
 |-------|---------|------|
 | code-review | 2026-01-13 | ✅ 通过 |
-| frontend-daily | 2026-01-13 | ✅ 已修正 |
-| skill-generator | 2026-01-13 | ✅ 通过 |
-| skill-evolution | 2026-01-13 | ✅ 通过 |
+| frontend-daily | 2026-01-13 | ✅ 已修正+进化 |
+| skill-evolution | 2026-01-13 | ✅ 已合并 skill-generator |
 
 ---
 
