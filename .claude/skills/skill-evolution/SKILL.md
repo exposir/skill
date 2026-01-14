@@ -586,49 +586,52 @@ cp .claude/skills/<name>/SKILL.md \
 
 ---
 
+<!-- Evolved: 2026-01-14 | type: 无极进化 | sources: gend.co, medium.com -->
 ## Hooks 自动检测（可选）
 
 Hooks 用于自动检测进化机会，仅提示不自动修改。
 
-### 安装方式
+### 新特性（Claude Code 2.1.0+）
 
-```bash
-# 将 hooks 配置合并到 .claude/settings.json
+| 特性 | 说明 |
+|-----|------|
+| **Skill Hot-Reload** | Skill 修改后即时生效，无需重启会话 |
+| **updatedInput** | 在 PreToolUse 中修正输入，避免阻断 Agent |
+
+### 最佳实践：Let Agent Finish
+
+```
+传统方式：每步阻断验证 → 频繁中断，效率低
+推荐方式：让 Agent 完成整个计划 → 最后统一验证
+
+实现：使用 UserPromptSubmit hook 或 commit 前验证
 ```
 
-### Hooks 配置
+### PreToolUse 输入修正示例
 
 ```json
 {
   "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [{
-          "type": "command",
-          "command": "bash .claude/skills/skill-evolution/hooks/detect-failure.sh"
-        }]
-      }
-    ],
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [{
-          "type": "command",
-          "command": "bash .claude/skills/skill-evolution/hooks/session-summary.sh"
-        }]
-      }
-    ]
+    "PreToolUse": [{
+      "matcher": "Bash",
+      "hooks": [{
+        "type": "command",
+        "command": "node fix-input.js",
+        "timeout": 5000
+      }]
+    }]
   }
 }
 ```
 
-### Hook 说明
+返回 `{"updatedInput": {...}}` 可无感修正输入。
+
+### 进化检测 Hooks
 
 | Hook | 触发时机 | 作用 |
 |-----|---------|------|
-| detect-failure.sh | Bash 命令失败后 | 检测是否因 skill 导致，输出提示信号 |
-| session-summary.sh | 会话结束时 | 统计可积累的知识，输出提示信号 |
+| PostToolUse:Bash | 命令失败后 | 检测是否因 skill 导致 |
+| Stop | 会话结束时 | 统计可积累的知识 |
 
 ---
 
@@ -762,40 +765,6 @@ git commit -m "skill(code-review): 添加 React 审查"
 
 ---
 
-<!-- Evolved: 2026-01-13 | type: 无极进化 | sources: anthropic.com, skywork.ai -->
-## 进化策略进阶
-
-### 渐进式进化
-
-```
-Level 1：基础版（快速上线）
-├─ 核心功能
-├─ 最小可用
-└─ 快速验证
-
-Level 2：增强版（迭代优化）
-├─ 更多场景覆盖
-├─ 示例补充
-└─ 边界处理
-
-Level 3：专家版（深度打磨）
-├─ 高级技巧
-├─ 最佳实践
-└─ 工具集成
-```
-
-### 知识蒸馏
-
-从冗长内容中提取精华：
-
-```
-原始知识（verbose）     →  蒸馏后（concise）
-- 长篇解释              →  核心要点
-- 多个示例              →  最佳示例
-- 历史原因              →  当前最佳实践
-```
-
----
 
 <!-- Evolved: 2026-01-13 | type: 无极进化 | sources: getmaxim.ai, medium.com -->
 <!-- Merged: 2026-01-13 | merged: RACE 框架 | reason: 功能相似，统一管理 -->
@@ -888,41 +857,11 @@ alwaysApply: false
 # 内容...
 ```
 
-### 同步脚本示例
+### 同步方式
 
-```bash
-#!/bin/bash
-# sync-skills.sh - 将 Claude Skills 同步到 Cursor Rules
+提取 description + 跳过 frontmatter → 写入 `.cursor/rules/<name>.mdc`
 
-SKILLS_DIR=".claude/skills"
-CURSOR_DIR=".cursor/rules"
-
-mkdir -p "$CURSOR_DIR"
-
-for skill_dir in "$SKILLS_DIR"/*/; do
-    skill_name=$(basename "$skill_dir")
-    skill_file="$skill_dir/SKILL.md"
-
-    if [ -f "$skill_file" ]; then
-        # 提取 description
-        desc=$(grep "^description:" "$skill_file" | sed 's/description: //')
-
-        # 创建 Cursor rule
-        {
-            echo "---"
-            echo "description: $desc"
-            echo "alwaysApply: false"
-            echo "---"
-            # 跳过 YAML frontmatter，复制内容
-            sed '1,/^---$/d' "$skill_file" | sed '1,/^---$/d'
-        } > "$CURSOR_DIR/$skill_name.mdc"
-
-        echo "✅ Synced: $skill_name"
-    fi
-done
-```
-
-### 平台差异注意
+### 平台差异
 
 | 差异点 | Claude Code | Cursor |
 |-------|-------------|--------|
@@ -1033,548 +972,212 @@ Level 3 - 完全信任
 
 ---
 
-<!-- Evolved: 2026-01-13 | type: 无极进化 | sources: medium.com, github.com/cline -->
-<!-- Merged: 2026-01-13 | merged: Agentic Memory 模式 | reason: 消除冗余 -->
+
+<!-- Compressed: 2026-01-13 | reason: 精简模板和示例 -->
 ## Memory Bank 模式
 
-实现跨会话的知识持久化，将知识存储在 context 外按需加载。
+跨会话知识持久化，按需加载到 context。
 
-### 核心概念
-
-```
-传统模式：所有 Skill 加载到 context → 容易溢出
-Memory Bank：只加载相关内容 → 高效利用 context
-
-.claude/skills/ (外部存储) ──按需读取──→ Context Window
-```
-
-### Memory Bank 架构
+### 架构
 
 ```
 .claude/
-├── memory/                    ← Memory Bank 根目录
-│   ├── project-context.md     ← 项目级上下文
-│   ├── session-history/       ← 会话历史摘要
-│   │   ├── 2026-01-13.md
-│   │   └── ...
-│   ├── decisions/             ← 架构决策记录
-│   │   ├── adr-001-auth.md
-│   │   └── ...
-│   └── learned/               ← 学习到的知识
-│       ├── bugs-fixed.md
-│       └── patterns.md
-└── skills/                    ← Skill 目录（已有）
+├── memory/
+│   ├── project-context.md   ← 项目上下文（总是加载）
+│   ├── session-history/     ← 会话摘要
+│   ├── decisions/           ← 架构决策
+│   └── learned/             ← 学习到的知识
+└── skills/
 ```
 
-### 项目上下文模板
+### 加载策略
 
-```markdown
-# Project Context
+| 时机 | 加载内容 |
+|-----|---------|
+| 会话开始 | project-context.md + 最近3个会话摘要 |
+| 会话中 | 检测相关话题 → 加载对应记忆 |
+| 会话结束 | 生成摘要，更新 project-context |
 
-## 项目概述
-- 名称：
-- 类型：[Web App / CLI / Library / ...]
-- 技术栈：
-
-## 架构决策
-- 状态管理：
-- 路由方案：
-- API 风格：
-
-## 代码规范
-- 命名约定：
-- 文件组织：
-- 测试要求：
-
-## 常见问题
-- 问题 1：解决方案
-- 问题 2：解决方案
-
-## 最近工作
-<!-- 由系统自动更新 -->
-- [日期] 完成了 xxx
-- [日期] 修复了 xxx
-```
-
-### 会话摘要机制
-
-每次会话结束时自动生成摘要：
-
-```markdown
-# 会话摘要 - 2026-01-13
-
-## 完成的任务
-- 实现了用户认证功能
-- 修复了 3 个 TypeScript 类型错误
-
-## 学到的知识
-- React 19 的 use() hook 用法
-- Zod schema 与 TypeScript 类型推断
-
-## 遗留问题
-- [ ] 需要添加单元测试
-- [ ] 性能优化待处理
-
-## 关键文件变更
-- src/auth/login.tsx (新增)
-- src/types/user.ts (修改)
-```
-
-### 上下文加载策略
+### Memory → Skill 进化
 
 ```
-会话开始时：
-1. 读取 project-context.md（总是加载）
-2. 读取最近 3 个会话摘要（按需）
-3. 根据用户请求加载相关 decisions/learned
-
-会话进行中：
-4. 检测到相关话题 → 加载对应记忆
-5. 学到新知识 → 提示保存到 learned/
-
-会话结束时：
-6. 生成会话摘要
-7. 更新 project-context.md（如有重要变更）
+Memory 记录 → 多次使用(≥3次) → 提示创建 Skill → 标记「已提炼」
 ```
 
-### 与 Skill 进化的集成
+---
+---
 
-```markdown
-## Memory → Skill 进化路径
+<!-- Merged: 2026-01-13 | merged: 进化策略进阶+4P Ladder | reason: 统一进化路径 -->
+## 进化路径
 
-1. 知识首先记录到 Memory Bank
-   └─ .claude/memory/learned/patterns.md
+### 渐进式进化（3个阶段）
 
-2. 当某个模式被多次使用（≥3次）
-   └─ 提示：「这个模式出现多次，要创建 Skill 吗？」
+| 阶段 | 目标 | 特征 |
+|-----|------|------|
+| L1 基础版 | 快速上线 | 核心功能、最小可用 |
+| L2 增强版 | 迭代优化 | 更多场景、示例补充 |
+| L3 专家版 | 深度打磨 | 高级技巧、工具集成 |
 
-3. 用户确认后，从 Memory 提炼为 Skill
-   └─ .claude/skills/<new-skill>/SKILL.md
+### 4P 阶梯（Skill → Agent）
 
-4. 原 Memory 记录标记为「已提炼」
-   └─ <!-- Promoted to skill: <skill-name> -->
+| 层级 | 名称 | 特征 | Skill类型 |
+|-----|------|------|---------|
+| L1 | Prompts | 单次交互、无状态 | 简单模板 |
+| L2 | Playbooks | 多步骤、可复用 | 完整流程+清单 |
+| L3 | Plug-ins | 工具集成、有安全边界 | 含工具调用+权限 |
+| L4 | Proactive Agents | 自主决策、人工监督 | Agent+HITL |
+
+### 升级路径
+
+```
+L1→L2: 添加流程和模板
+L2→L3: 集成工具，添加错误处理
+L3→L4: 事件驱动，实现 HITL
+```
+
+### 知识蒸馏
+
+```
+verbose → concise
+长篇解释 → 核心要点
+多个示例 → 最佳示例
+历史原因 → 当前最佳实践
 ```
 
 ---
 
-<!-- Evolved: 2026-01-13 | type: 无极进化 | sources: brainyboss.ai, hyscaler.com -->
-## 4P Ladder 进阶路径
+<!-- Added: 2026-01-14 | source: 无极进化搜索 | trigger: hyscaler.com, analyticsvidhya.com -->
+## Agentic Reasoning 推理模式
 
-从简单 Prompt 到自主 Agent 的演进模型。
+2026 年 Agentic AI 从实验走向企业应用，Skill 需要支持更高级的推理模式。
 
-### 4P 阶梯概览
+### 核心推理模式
+
+| 模式 | 说明 | 适用场景 |
+|-----|------|---------|
+| **ReAct** | Reasoning + Acting 交替进行 | 需要工具调用的任务 |
+| **Reflexion** | 执行后反思，迭代改进 | 复杂问题解决 |
+| **Tree-of-Thought** | 多路径探索，选择最优 | 需要规划的任务 |
+| **Critique-and-Revise** | 生成→批评→修正循环 | 内容生成、代码审查 |
+
+### ReAct 模式示例
 
 ```
-Level 4: Proactive Agents（主动代理）
-         ↑ 自主执行、人工监督
-Level 3: Plug-ins（插件）
-         ↑ 连接工具和数据
-Level 2: Playbooks（剧本）
-         ↑ 可复用工作流
-Level 1: Prompts（提示词）
-         ↑ 基础交互
+Thought: 我需要先了解项目结构
+Action: 读取 package.json
+Observation: 这是一个 React + TypeScript 项目
+Thought: 现在我知道技术栈了，可以开始审查
+Action: 读取目标文件
+...
 ```
 
-### 各层级详解
-
-#### Level 1: Prompts（提示词）
+### 在 Skill 中应用
 
 ```markdown
-特征：
-- 单次交互
-- 手动触发
-- 无状态
+## 执行流程（ReAct 模式）
 
-示例：
-"帮我写一个 React 组件"
+1. **Thought**: 分析用户请求，确定目标
+2. **Action**: 执行第一步操作
+3. **Observation**: 观察结果
+4. **Thought**: 基于观察调整策略
+5. 重复直到完成
 
-对应 Skill 类型：
-- 简单的代码生成模板
-- 单一任务指令
+## 反思检查点
+
+每完成一个阶段后：
+- 目标是否偏离？
+- 是否有更好的方法？
+- 是否需要回退？
 ```
 
-#### Level 2: Playbooks（剧本）
-
-```markdown
-特征：
-- 多步骤流程
-- 可复用
-- 有明确的输入输出
-
-示例：
-"代码审查流程"
-1. 读取 PR 描述
-2. 分析代码变更
-3. 检查各维度
-4. 生成报告
-
-对应 Skill 类型：
-- 带流程的完整 Skill
-- 包含检查清单和输出模板
-```
-
-#### Level 3: Plug-ins（插件）
-
-```markdown
-特征：
-- 连接外部工具
-- 数据集成
-- 有安全边界
-
-示例：
-"集成 GitHub API 的 PR 审查"
-- 自动获取 PR 信息
-- 调用 lint/test 工具
-- 发布评论到 PR
-
-对应 Skill 类型：
-- 包含工具调用的 Skill
-- 需要权限配置
-- 有错误处理逻辑
-```
-
-#### Level 4: Proactive Agents（主动代理）
-
-```markdown
-特征：
-- 自主决策
-- 持续运行
-- 人工监督
-
-示例：
-"自动代码审查机器人"
-- 监听 PR 创建事件
-- 自动执行审查
-- 根据严重程度决定是否阻塞
-- 异常时通知人工
-
-对应 Skill 类型：
-- Agent 配置 + 多个 Skill 组合
-- 需要 HITL 机制
-- 需要监控和日志
-```
-
-### Skill 成熟度评估
-
-评估你的 Skill 处于哪个层级：
-
-| 层级 | 检查项 | 达标标准 |
-|-----|-------|---------|
-| L1 | 基础功能 | 能完成单一任务 |
-| L2 | 流程完整 | 有明确步骤、可复用、有模板 |
-| L3 | 工具集成 | 调用外部工具、处理错误、有权限控制 |
-| L4 | 自主运行 | 事件驱动、自主决策、人工监督 |
-
-### 升级路径建议
+### Self-Consistency 提升准确性
 
 ```
-L1 → L2：添加流程
-├─ 将单次操作扩展为多步骤
-├─ 添加输入验证和输出模板
-└─ 编写使用示例
+对同一问题生成多个答案 → 选择最一致的结果
 
-L2 → L3：添加集成
-├─ 识别可自动化的手动步骤
-├─ 集成相关工具（git, npm, API）
-├─ 添加错误处理和重试逻辑
-└─ 配置权限边界
-
-L3 → L4：添加自主性
-├─ 定义触发事件（webhook, 定时）
-├─ 设计决策逻辑
-├─ 实现 HITL 机制
-└─ 建立监控和告警
+适用：推理任务、决策场景
 ```
 
-### 实际案例：code-review 的进化
+---
+
+<!-- Added: 2026-01-14 | source: 无极进化搜索 | trigger: addyosmani.com, gend.co -->
+## Skill 开发最佳实践
+
+来自 2025-2026 年社区总结的最佳实践。
+
+### 效率实践
+
+| 实践 | 说明 |
+|-----|------|
+| **Let Agent Finish** | 让 Agent 完成整个计划再验证，避免频繁阻断 |
+| **Small Iterative Chunks** | 小步迭代，每次 diff < 200 行 |
+| **Propose Plan First** | 先提出 3 步计划，再执行 |
+| **Input Modification** | 用 updatedInput 无感修正，而非阻断 |
+
+### description 优化
+
+```yaml
+# 好的 description（多触发词、明确时机）
+description: |
+  审查代码质量。当用户请求 review、代码审查、
+  检查代码、"帮我看看这段代码" 时使用。
+
+# 差的 description（模糊）
+description: 帮助处理代码
+```
+
+### 开发流程
 
 ```
-L1 阶段：
-"检查这段代码有没有问题"
-
-L2 阶段：
-完整的审查流程 + 检查清单 + 报告模板
-
-L3 阶段（当前）：
-+ 集成 ESLint/TypeScript 检查
-+ 调用 git diff 获取变更
-+ 格式化输出审查结果
-
-L4 阶段（目标）：
-+ GitHub webhook 触发
-+ 自动评论到 PR
-+ 根据问题严重程度阻塞合并
-+ 异常情况通知维护者
+1. 个人需求驱动 → 先为自己开发
+2. 本地测试迭代 → 验证多场景
+3. 项目级共享 → .claude/skills/
+4. 团队级推广 → 共享仓库
 ```
+
+### 质量检查清单
+
+- [ ] description 包含多种触发表述？
+- [ ] 有具体示例？
+- [ ] 流程步骤清晰？
+- [ ] 在不同场景测试过？
+- [ ] 无敏感信息？
 
 ---
 
 <!-- Evolved: 2026-01-13 | type: 无极进化 | sources: aws.com, langwatch.ai, towardsdatascience.com -->
+
+<!-- Compressed: 2026-01-13 | reason: 精简概念解释 -->
 ## DSPy 自动优化
 
-将 Skill 优化从手工调试转向算法化优化。
+算法化优化 Prompt，从手工调试转向自动优化。
 
-### DSPy 是什么
-
-DSPy 是一个用于算法化优化 LLM Prompt 的框架，核心理念：
-
-```
-传统方式：手工编写 Prompt → 测试 → 调整 → 重复
-DSPy 方式：定义目标 + 指标 → 自动优化 → 验证结果
-```
-
-### 与 Skill 的关系
-
-```
-Skill 定义了「做什么」和「怎么做」
-DSPy 自动优化「怎么表达」才能效果最好
-```
-
-### DSPy 核心概念
+### 核心概念
 
 | 概念 | 说明 | 类比 Skill |
-|-----|------|-----------|
-| **Signature** | 定义输入输出的结构 | Skill 的 Format 部分 |
-| **Module** | 封装 LLM 调用逻辑 | Skill 的 Execution 部分 |
-| **Optimizer** | 自动优化 Prompt | 无极进化的自动化版本 |
-| **Metric** | 评估效果的函数 | Skill 效果度量 |
+|-----|------|-----------| 
+| Signature | 输入输出结构 | Format 部分 |
+| Module | LLM 调用逻辑 | Execution 部分 |
+| Optimizer | 自动优化 Prompt | 无极进化自动版 |
+| Metric | 评估效果函数 | 效果度量 |
 
-### MIPROv2 优化器工作流程
-
-```
-1. Bootstrap（引导）
-   └─ 从训练数据中提取高分示例
-
-2. Propose（提议）
-   └─ 分析模式，生成多个候选 Prompt
-
-3. Search（搜索）
-   └─ 贝叶斯搜索找到最优组合
-
-4. Validate（验证）
-   └─ 在验证集上确认效果
-```
-
-### Skill 优化实践
-
-将 DSPy 思想应用到 Skill 优化：
-
-```python
-# 概念示例（非实际代码）
-
-# 1. 定义 Skill 签名
-class CodeReviewSignature:
-    input: str   # 代码片段
-    output: str  # 审查报告
-
-# 2. 定义评估指标
-def review_quality_metric(prediction, reference):
-    # 检查是否发现了关键问题
-    # 检查报告格式是否正确
-    # 检查建议是否可操作
-    return score
-
-# 3. 准备训练数据
-examples = [
-    {"input": code1, "output": review1},
-    {"input": code2, "output": review2},
-    ...
-]
-
-# 4. 运行优化
-optimizer = MIPROv2(metric=review_quality_metric)
-optimized_prompt = optimizer.compile(
-    CodeReviewSignature,
-    trainset=examples
-)
-```
-
-### 手动应用 DSPy 原则
-
-即使不使用 DSPy 框架，也可以借鉴其原则：
-
-| 原则 | 手动实践 |
-|-----|---------|
-| 定义清晰的输入输出 | 使用 5P 框架明确 Format |
-| 收集高质量示例 | 记录成功的执行案例 |
-| 建立评估指标 | 定义 Skill 成功的标准 |
-| 迭代优化 | 根据失败案例调整 Prompt |
-| A/B 测试 | 对比不同版本的效果 |
-
-### 自动优化工具链
+### MIPROv2 流程
 
 ```
-准备阶段：
-├─ 收集 Skill 执行日志
-├─ 标注成功/失败案例
-└─ 定义评估指标
-
-优化阶段：
-├─ 使用 DSPy/LangWatch 运行优化
-├─ 生成候选 Prompt 变体
-└─ 自动评估和排序
-
-部署阶段：
-├─ 选择最优变体
-├─ 更新 Skill 内容
-└─ 添加进化标记
+Bootstrap(提取高分示例) → Propose(生成候选) → Search(贝叶斯搜索) → Validate(验证)
 ```
+
+### 手动应用原则
+
+| 原则 | 实践 |
+|-----|---------| 
+| 清晰输入输出 | 使用 5P 框架 |
+| 收集示例 | 记录成功案例 |
+| 建立指标 | 定义成功标准 |
+| 迭代优化 | 根据失败调整 |
+| A/B 测试 | 对比版本效果 |
 
 ---
-
-<!-- Evolved: 2026-01-13 | type: 无极进化 | sources: towardsai.net, talkk.ai, medium.com -->
-## Skill 组合与编排
-
-构建多 Skill 协作的复杂系统。
-
-### 为什么需要 Skill 组合
-
-```
-单一 Skill：
-└─ 完成单一任务，边界清晰
-
-组合 Skill：
-└─ 多个 Skill 协作完成复杂任务
-   ├─ code-review + test-generator = 完整质量保证
-   ├─ brainstorming + planning + implementation = 端到端开发
-   └─ research + analysis + report = 深度调研
-```
-
-### 组合模式
-
-#### 1. 顺序组合（Pipeline）
-
-```
-Skill A → Skill B → Skill C → 最终结果
-
-示例：代码生成流水线
-需求分析 → 架构设计 → 代码实现 → 代码审查 → 测试生成
-```
-
-#### 2. 并行组合（Parallel）
-
-```
-        ┌→ Skill A ─┐
-输入 ───┼→ Skill B ─┼→ 合并 → 输出
-        └→ Skill C ─┘
-
-示例：多维度代码审查
-        ┌→ 安全审查 ─┐
-代码 ───┼→ 性能审查 ─┼→ 综合报告
-        └→ 风格审查 ─┘
-```
-
-#### 3. 层级组合（Hierarchical）
-
-```
-主 Skill（协调者）
-├─ 子 Skill A（专家）
-├─ 子 Skill B（专家）
-└─ 子 Skill C（专家）
-
-示例：项目规划
-项目规划 Skill（主）
-├─ 需求分析 Skill
-├─ 技术选型 Skill
-└─ 任务分解 Skill
-```
-
-#### 4. 条件组合（Conditional）
-
-```
-       ┌─ 条件 A → Skill A
-输入 ──┼─ 条件 B → Skill B
-       └─ 条件 C → Skill C
-
-示例：错误处理路由
-       ┌─ 类型错误 → TypeScript 修复 Skill
-错误 ──┼─ 运行时错误 → 调试 Skill
-       └─ 性能问题 → 优化 Skill
-```
-
-### 依赖管理
-
-定义 Skill 之间的依赖关系：
-
-```yaml
-# skill-manifest.yaml（概念示例）
-
-name: full-code-review
-version: 1.0.0
-dependencies:
-  - skill: code-review
-    version: ">=2.0.0"
-  - skill: security-audit
-    version: ">=1.0.0"
-  - skill: performance-check
-    optional: true
-
-composition:
-  type: parallel
-  merge_strategy: aggregate
-```
-
-### 组合声明示例
-
-在 Skill 中声明组合关系：
-
-```markdown
-## 依赖的 Skill
-
-| Skill | 用途 | 必需 |
-|-------|------|------|
-| code-review | 代码质量审查 | ✅ |
-| security-audit | 安全漏洞检查 | ✅ |
-| performance-check | 性能分析 | ❌ |
-
-## 组合流程
-
-1. 并行执行 code-review 和 security-audit
-2. 如果可用，执行 performance-check
-3. 合并所有结果生成综合报告
-```
-
-### Composable AI Workforce
-
-2026 年趋势：从单一 Agent 到可组合 AI 团队
-
-```
-传统：一个全能 Agent
-└─ 问题：复杂、难维护、不灵活
-
-趋势：多个专精 Agent 组成团队
-├─ 每个 Agent 负责特定领域
-├─ 通过编排层协调工作
-└─ 可动态组合应对不同任务
-```
-
-### 实现建议
-
-```markdown
-## Skill 组合最佳实践
-
-1. **保持 Skill 单一职责**
-   - 每个 Skill 只做一件事，做好
-   - 复杂功能通过组合实现
-
-2. **定义清晰的接口**
-   - 明确输入格式
-   - 明确输出格式
-   - 便于其他 Skill 对接
-
-3. **松耦合设计**
-   - Skill 之间通过标准格式通信
-   - 避免直接依赖内部实现
-
-4. **优雅降级**
-   - 可选依赖不可用时仍能工作
-   - 提供降级后的基本功能
-```
-
----
-
-<!-- Evolved: 2026-01-13 | type: 无极进化 | sources: reddit.com, gend.co, flowgpt -->
-<!-- Compressed: 2026-01-13 | reason: 精简冗长示例 -->
 ## 社区分享机制
 
 Skill 的导出、分享与复用。
@@ -1646,38 +1249,26 @@ Skill 的导出、分享与复用。
 
 <!-- Evolved: 2026-01-13 | type: 无极进化 | sources: observability pipelines, systematic evaluation -->
 <!-- Compressed: 2026-01-13 | reason: 精简诊断流程 -->
-## Skill 调试与诊断
 
-### 诊断层级（自底向上）
+<!-- Merged: 2026-01-13 | merged: 调试诊断+错误恢复 | reason: 统一故障处理 -->
+## 故障处理
+
+### 诊断层级
 
 | 层级 | 检查项 | 诊断方法 |
-|-----|-------|---------|
-| L1 加载 | 文件存在？YAML 正确？ | `ls .claude/skills/<name>/SKILL.md` |
-| L2 触发 | description 覆盖？被抢占？ | 检查 description，手动 `/skill-name` |
+|-----|-------|---------| 
+| L1 加载 | 文件存在？YAML正确？ | `ls .claude/skills/<name>/SKILL.md` |
+| L2 触发 | description覆盖？ | 检查description，手动`/skill-name` |
 | L3 执行 | 流程完整？示例可用？ | 对照日志，验证示例 |
 | L4 业务 | 解决问题？符合预期？ | 用户反馈 |
 
-### 常见问题速查
+### 常见问题
 
 | 问题 | 原因 | 解决 |
 |-----|------|------|
-| 不触发 | description 不匹配 | 丰富触发词，覆盖中英文 |
-| 执行不完整 | 流程有歧义/依赖缺失 | 明确步骤，检查依赖 |
-| 输出不符预期 | Format/Constraints 不清 | 添加示例，强化约束 |
-
-### 健康检查周期
-
-| 周期 | 检查项 |
-|-----|-------|
-| 每周 | 触发率、用户反馈 |
-| 每月 | 示例有效性、依赖可用性 |
-| 每季 | 流程完整性、业界对比 |
-
----
-
-<!-- Evolved: 2026-01-13 | type: 无极进化 | sources: circuit breakers, fallback strategies, self-healing -->
-<!-- Compressed: 2026-01-13 | reason: 精简错误恢复内容 -->
-## 错误恢复与降级
+| 不触发 | description不匹配 | 丰富触发词 |
+| 执行不完整 | 流程有歧义 | 明确步骤 |
+| 输出不符预期 | Format不清 | 添加示例 |
 
 ### 弹性原则
 
@@ -1686,17 +1277,8 @@ Skill 的导出、分享与复用。
 | 预期失败 | 假设任何步骤都可能失败 |
 | 快速失败 | 尽早检测，避免级联 |
 | 优雅降级 | 部分失败仍提供基本服务 |
-| 自我恢复 | 自动检测和恢复常见问题 |
 
-### 熔断器模式
-
-```
-CLOSED ──失败3次──→ OPEN ──5分钟后──→ HALF-OPEN ──成功──→ CLOSED
-                      ↑                    │
-                      └────失败────────────┘
-```
-
-### 回退策略层级
+### 回退策略
 
 | 层级 | 策略 | 说明 |
 |-----|------|------|
@@ -1705,27 +1287,13 @@ CLOSED ──失败3次──→ OPEN ──5分钟后──→ HALF-OPEN ──
 | L3 | 降级 | 返回缓存/部分功能 |
 | L4 | 安全失败 | 告知用户，记录问题 |
 
-### 功能优先级
+### 熔断器
 
-| 优先级 | 降级策略 |
-|-------|---------|
-| P0 核心 | 不降级，失败则告警 |
-| P1 重要 | 降级为基础版 |
-| P2 可选 | 可跳过 |
-
-### 错误分类
-
-| 错误类型 | 处理策略 |
-|---------|---------|
-| 暂时性（网络/超时） | 重试 |
-| 配置错误 | 修正后重试 |
-| 依赖错误 | 降级或替代 |
-| 逻辑错误 | 修复 Skill |
+```
+CLOSED ─失败3次─→ OPEN ─5分钟后─→ HALF-OPEN ─成功─→ CLOSED
+```
 
 ---
-
-<!-- Evolved: 2026-01-13 | type: 无极进化 | sources: LLMLingua, TOON format, semantic summarization -->
-<!-- Compressed: 2026-01-13 | reason: 精简 Token 优化内容 -->
 ## Token 优化技术
 
 ### 压缩技术对比
@@ -1977,329 +1545,74 @@ dependencies:
 ---
 
 <!-- Evolved: 2026-01-13 | type: 无极进化 | sources: machinelearningmastery.com, adaline.ai, microsoft.com -->
+
+<!-- Compressed: 2026-01-13 | reason: 精简编排模式 -->
 ## 多智能体编排
 
-将 Skill 扩展为可协作的智能体系统。
-
-### 2026 趋势：从单体到多智能体
-
-```
-2024-2025：单一全能 Agent
-└─ 一个 Agent 处理所有任务
-└─ 问题：复杂、难维护、性能瓶颈
-
-2026+：多智能体编排
-└─ 专精 Agent 团队协作
-└─ 优势：模块化、可扩展、高效
-└─ 类比：AI 的「微服务时代」
-```
-
-**关键数据**：Gartner 报告多智能体系统咨询量从 2024 Q1 到 2025 Q2 增长 1,445%。
+从单体 Agent 到多专精 Agent 团队协作。
 
 ### 编排模式
 
-#### 1. 顺序编排（Sequential）
+| 模式 | 说明 | 适用场景 |
+|-----|------|---------|
+| 顺序 | A→B→C | 有明确步骤的任务 |
+| 并行 | A\|B\|C→合并 | 多维度分析 |
+| 层级 | 主Agent协调子Agent | 复杂决策 |
+| 动态 | 路由Agent选择执行路径 | 多变任务类型 |
+
+### 通信协议
+
+| 协议 | 用途 |
+|-----|------|
+| MCP | Agent与工具/数据源通信 |
+| A2A | Agent之间通信 |
+
+### Skill → Agent 演进
 
 ```
-Agent A → Agent B → Agent C → 输出
-
-特点：
-├─ 线性流水线
-├─ 每个 Agent 处理前一个的输出
-└─ 适合：有明确步骤的任务
-
-示例：文档生成流水线
-需求分析 Agent → 大纲生成 Agent → 内容撰写 Agent → 审校 Agent
+L1 Skill(被动) → L2 Reactive(响应事件) → L3 Proactive(主动监控) → L4 Collaborative(协作)
 ```
 
-#### 2. 并行编排（Concurrent）
+### 设计原则
 
-```
-        ┌→ Agent A ─┐
-输入 ───┼→ Agent B ─┼→ 合并 → 输出
-        └→ Agent C ─┘
-
-特点：
-├─ 多 Agent 同时执行
-├─ 结果合并汇总
-└─ 适合：多维度分析
-
-示例：全面代码审查
-        ┌→ 安全审查 Agent ─┐
-代码 ───┼→ 性能审查 Agent ─┼→ 综合报告
-        └→ 风格审查 Agent ─┘
-```
-
-#### 3. 层级编排（Hierarchical）
-
-```
-        协调者 Agent
-       ┌────┼────┐
-       ↓    ↓    ↓
-    Agent  Agent  Agent
-      A      B      C
-
-特点：
-├─ 主 Agent 分配和协调任务
-├─ 子 Agent 执行具体工作
-└─ 适合：复杂决策场景
-
-示例：项目规划
-        项目经理 Agent
-       ┌────┼────┐
-       ↓    ↓    ↓
-    需求   技术   资源
-   分析   评估   规划
-```
-
-#### 4. 动态编排（Adaptive）
-
-```
-输入 → 路由 Agent → 选择合适的 Agent(s) → 输出
-
-特点：
-├─ 根据输入动态选择执行路径
-├─ 可组合多种模式
-└─ 适合：多变的任务类型
-```
-
-### Agent 通信协议
-
-| 协议 | 全称 | 用途 |
-|-----|------|------|
-| **MCP** | Model Context Protocol | Agent 与工具/数据源通信 |
-| **A2A** | Agent-to-Agent Protocol | Agent 之间通信 |
-| **ACP** | Agent Communication Protocol | 通用 Agent 通信 |
-| **ANP** | Agent Network Protocol | 大规模 Agent 网络 |
-
-### Skill 到 Agent 的演进
-
-```markdown
-## Skill Agent 化
-
-Level 1: Skill（当前）
-└─ 被动触发，执行指令
-
-Level 2: Reactive Agent
-└─ 响应事件，有简单决策
-
-Level 3: Proactive Agent
-└─ 主动监控，自主行动
-
-Level 4: Collaborative Agent
-└─ 与其他 Agent 协作
-```
-
-### 多智能体 Skill 配置
-
-```yaml
-# multi-agent-skill.yaml
-
-name: comprehensive-code-review
-type: multi-agent
-orchestration: parallel
-
-agents:
-  - name: security-reviewer
-    skill: security-audit
-    priority: high
-
-  - name: performance-reviewer
-    skill: performance-check
-    priority: medium
-
-  - name: style-reviewer
-    skill: code-style
-    priority: low
-
-merge_strategy:
-  type: aggregate
-  format: unified-report
-
-fallback:
-  on_agent_failure: continue
-  min_agents_required: 1
-```
-
-### 编排最佳实践
-
-```markdown
-## 多智能体设计原则
-
-1. **单一职责**
-   - 每个 Agent 专注一个领域
-   - 避免万能 Agent
-
-2. **松耦合**
-   - Agent 通过标准接口通信
-   - 不依赖内部实现
-
-3. **容错设计**
-   - 单个 Agent 失败不影响整体
-   - 提供降级策略
-
-4. **可观测性**
-   - 追踪跨 Agent 调用链
-   - 监控各 Agent 性能
-
-5. **资源管理**
-   - 控制并发 Agent 数量
-   - 避免资源争抢
-```
+- **单一职责**: 每个Agent专注一个领域
+- **松耦合**: 标准接口通信
+- **容错**: 单个失败不影响整体
+- **可观测**: 追踪跨Agent调用链
 
 ---
 
-<!-- Evolved: 2026-01-13 | type: 无极进化 | sources: arxiv.org, openreview.net, researchgate.net -->
+<!-- Compressed: 2026-01-13 | reason: 精简多语言示例 -->
 ## 多语言支持
 
-让 Skill 在不同语言和文化环境下有效工作。
+### 策略对比
 
-### 多语言策略对比
+| 策略 | 优势 | 劣势 |
+|-----|------|------|
+| 单语言(英语) | 简单，迁移性好 | 非英语体验差 |
+| 多版本 | 本地化好 | 维护成本高 |
+| 混合(推荐) | 平衡 | 需策略设计 |
 
-| 策略 | 说明 | 优势 | 劣势 |
-|-----|------|------|------|
-| **单语言（英语）** | Skill 只用英语编写 | 简单，英语迁移性好 | 非英语用户体验差 |
-| **多版本** | 每种语言一个 Skill 版本 | 本地化体验好 | 维护成本高 |
-| **自适应** | 检测语言动态响应 | 灵活 | 实现复杂 |
-| **混合** | 核心英语 + 输出本地化 | 平衡 | 需要策略设计 |
+### 混合策略
 
-### 推荐：混合策略
+- **核心内容**: 英语（模型理解最好）
+- **输出**: 根据用户语言
+- **description**: 包含多语言触发词
 
-```markdown
-## 混合多语言方案
+### 语言检测优先级
 
-### 核心内容（英语）
-- Skill 逻辑和流程用英语
-- 模型对英语理解最好
-- 便于维护和更新
-
-### 输出本地化
-- 根据用户语言输出
-- 使用语言标记指示
-
-### 示例
-```yaml
----
-name: code-review
-description: 审查代码。Review code. コードレビュー。
-default_language: auto
-supported_languages: [zh, en, ja, ko]
----
-
-# Code Review Process
-
-## Output Language
-Respond in the same language as the user's request.
-If unclear, use English.
 ```
-
-### 文化感知提示
-
-```markdown
-## 多文化提示技术
-
-### 问题：单一文化偏见
-LLM 训练数据以英语为主，可能忽略其他文化
-
-### 解决：文化线索注入
-
-传统提示：
-「列举三个节日」
-→ 可能只返回西方节日
-
-文化感知提示：
-「作为了解东亚文化的专家，列举三个重要节日，
-  考虑中国、日本、韩国的传统」
-→ 返回更多元的结果
-```
-
-### 语言检测与路由
-
-```markdown
-## 自动语言处理
-
-### 检测策略
-1. 显式声明：用户指定语言
-2. 请求推断：根据请求语言
-3. 环境变量：系统区域设置
-4. 默认回退：使用英语
-
-### 路由逻辑
-if user_specified_language:
-    use(user_specified_language)
-elif can_detect_from_request:
-    use(detected_language)
-elif system_locale_available:
-    use(system_locale)
-else:
-    use("en")
-```
-
-### 多语言 Skill 模板
-
-```yaml
----
-name: code-review
-description: |
-  EN: Review TypeScript/JavaScript code for quality issues.
-  ZH: 审查 TypeScript/JavaScript 代码质量问题。
-  JA: TypeScript/JavaScript コードの品質問題をレビュー。
-languages:
-  default: en
-  supported: [en, zh, ja, ko, es, fr, de]
-  output_localization: true
----
-
-# Code Review
-
-## Language Behavior
-
-### Input Processing
-- Accept requests in any supported language
-- Process using English-based logic (best model performance)
-
-### Output Generation
-- Match output language to input language
-- Use culturally appropriate examples when relevant
-
-### Fallback
-- If language unclear: respond in English
-- If translation uncertain: include English alongside
-```
-
-### 跨语言迁移
-
-```markdown
-## 研究发现：英语提示的跨语言能力
-
-研究表明，英语编写的提示可以有效处理其他语言的任务：
-
-| 场景 | 英语提示效果 | 建议 |
-|-----|------------|------|
-| 拉丁语系 | 接近原生 | 可直接使用英语提示 |
-| 东亚语言 | 略有下降 | 可使用英语，复杂任务本地化 |
-| 非拉丁字母 | 效果较差 | 建议本地化 |
-
-### 实践建议
-1. 核心逻辑用英语（最佳理解）
-2. 输出根据用户语言调整
-3. 专业术语保留原文
-4. 文化相关内容做本地化
+用户指定 → 请求语言推断 → 系统区域 → 默认英语
 ```
 
 ### 本地化检查清单
 
-创建多语言 Skill 时检查：
-
-- [ ] **description 多语言**：包含主要语言的触发词
-- [ ] **输出语言声明**：明确输出语言策略
-- [ ] **文化适配**：示例和场景考虑文化差异
-- [ ] **术语一致**：专业术语翻译统一
-- [ ] **测试覆盖**：在各目标语言测试
-- [ ] **回退机制**：语言不支持时的处理
+- [ ] description 多语言触发词
+- [ ] 输出语言声明
+- [ ] 文化适配示例
+- [ ] 各语言测试覆盖
 
 ---
-
 ## 背景知识：Skill 的本质与原理
 
 ### Skill 是什么
@@ -2356,3 +1669,25 @@ description: 帮助处理代码
 - Skill 是产品功能，不是 AI 行业通用标准
 - Skill 是一种 Prompt 管理和复用方案
 - 好的 `description` 是 skill 能否自动触发的关键
+
+<!-- Added: 2026-01-14 | source: 无极进化搜索 | trigger: dev.to, hyscaler.com -->
+### 角色演进：从 Prompt Engineer 到 AI Behavior Architect
+
+2026 年，"Prompt Engineer" 角色正在演进：
+
+| 阶段 | 角色 | 职责 |
+|-----|------|------|
+| 2023-2024 | Prompt Writer | 编写单次提示词 |
+| 2025 | Prompt Engineer | 设计可复用 Prompt 模板 |
+| 2026+ | **AI Behavior Architect** | 设计 Agent 行为、管理 Skill 生态 |
+
+**新职责**：
+- 设计 Agent 推理流程（ReAct, Reflexion）
+- 管理 Skill 生命周期（创建、进化、验证）
+- 构建 Prompt 框架和元提示（Meta-Prompt）
+- 确保 AI 行为的可靠性、安全性、合规性
+
+**趋势**：
+- 日常 Prompt 编写将被自动化
+- 重点转向系统设计和行为编排
+- Skill 管理成为核心能力
